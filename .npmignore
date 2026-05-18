@@ -1,0 +1,14 @@
+src/
+tests/
+.github/
+.vscode/
+logs/
+
+docker-compose.yml
+Dockerfile
+
+tsconfig.json
+vitest.config.ts
+eslint.config.js
+
+*.log
