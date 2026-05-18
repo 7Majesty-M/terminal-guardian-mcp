@@ -17,7 +17,7 @@ FROM node:20-alpine AS runtime
 LABEL org.opencontainers.image.title="Terminal Guardian MCP"
 LABEL org.opencontainers.image.description="Secure MCP server for AI terminal access"
 LABEL org.opencontainers.image.licenses="MIT"
-LABEL org.opencontainers.image.source="https://github.com/yourusername/terminal-guardian-mcp"
+LABEL org.opencontainers.image.source="https://github.com/7Majesty-M/terminal-guardian-mcp"
 
 # Install tini for proper signal handling
 RUN apk add --no-cache tini git bash

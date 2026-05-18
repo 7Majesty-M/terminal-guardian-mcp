@@ -4,7 +4,7 @@
  * Secure Model Context Protocol server for safe terminal access
  *
  * @license MIT
- * @see https://github.com/yourusername/terminal-guardian-mcp
+ * @see https://github.com/7Majesty-M/terminal-guardian-mcp
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -368,11 +368,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
+  process.stderr.write('\n✅ Terminal Guardian MCP server started successfully\n');
+  process.stderr.write(`   Workspace : ${config.workspace.rootDir}\n`);
+  process.stderr.write(`   Log dir   : ${config.logging.logDir}\n`);
+  process.stderr.write(`   Log level : ${config.logging.level}\n\n`);
   logger.info('Terminal Guardian MCP server ready');
 }
 
 main().catch((err) => {
   const message = err instanceof Error ? err.message : String(err);
   process.stderr.write(`Fatal error: ${message}\n`);
+  process.stderr.write('   Server failed to start. Check your config.\n\n');
   process.exit(1);
 });
