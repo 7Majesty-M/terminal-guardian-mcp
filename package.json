@@ -1,6 +1,6 @@
 {
   "name": "terminal-guardian-mcp",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Secure Model Context Protocol server for safe, sandboxed terminal access for AI assistants",
   "main": "dist/index.js",
   "bin": {
