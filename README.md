@@ -1,13 +1,13 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/yourusername/terminal-guardian-mcp/main/docs/assets/banner.png" alt="Terminal Guardian MCP" width="100%" />
+<img src="https://raw.githubusercontent.com/7Majesty-M/terminal-guardian-mcp/main/docs/assets/banner.png" alt="Terminal Guardian MCP" width="100%" />
 
 # Terminal Guardian MCP
 
 **Secure, sandboxed terminal access for AI assistants via the Model Context Protocol**
 
-[![CI](https://github.com/yourusername/terminal-guardian-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/terminal-guardian-mcp/actions)
-[![npm version](https://badge.fury.io/js/terminal-guardian-mcp.svg)](https://badge.fury.io/js/terminal-guardian-mcp)
+[![CI](https://github.com/7Majesty-M/terminal-guardian-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/7Majesty-M/terminal-guardian-mcp/actions)
+[![npm version](https://img.shields.io/npm/v/terminal-guardian-mcp?label=npm)](https://www.npmjs.com/package/terminal-guardian-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue.svg)](https://www.typescriptlang.org)
@@ -117,7 +117,7 @@ npm install -g terminal-guardian-mcp
 ### Install from source
 
 ```bash
-git clone https://github.com/yourusername/terminal-guardian-mcp.git
+git clone https://github.com/7Majesty-M/terminal-guardian-mcp.git
 cd terminal-guardian-mcp
 npm install
 npm run build
@@ -728,6 +728,6 @@ MIT © [Terminal Guardian Contributors](LICENSE)
 
 Built with ❤️ for the AI infrastructure community
 
-**[⭐ Star this project](https://github.com/yourusername/terminal-guardian-mcp)** if it's useful to you
+**[⭐ Star this project](https://github.com/7Majesty-M/terminal-guardian-mcp)** if it's useful to you
 
 </div>
