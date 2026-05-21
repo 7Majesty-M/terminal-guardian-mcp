@@ -113,7 +113,66 @@ export class DockerManager {
       });
     });
   }
+  async execContainer(
+    idOrName: string,
+    command: string[],
+    timeoutMs: number = 30_000,
+  ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+    const docker = await this.getDocker();
+    const container = docker.getContainer(idOrName);
 
+    const exec = await container.exec({
+      Cmd: command,
+      AttachStdout: true,
+      AttachStderr: true,
+    });
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`Container exec timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      exec.start({ hijack: true, stdin: false }, (err: any, stream: any) => {
+        if (err) {
+          clearTimeout(timer);
+          reject(err);
+          return;
+        }
+
+        let stdout = '';
+        let stderr = '';
+
+        stream.on('data', (chunk: Buffer) => {
+          let offset = 0;
+          while (offset < chunk.length) {
+            if (chunk.length < offset + 8) break;
+            const streamType = chunk[offset];
+            const frameSize = chunk.readUInt32BE(offset + 4);
+            const frameData = chunk.slice(offset + 8, offset + 8 + frameSize).toString('utf-8');
+            if (streamType === 2) stderr += frameData;
+            else stdout += frameData;
+            offset += 8 + frameSize;
+          }
+        });
+
+        stream.on('end', () => {
+          clearTimeout(timer);
+          exec.inspect((inspectErr: any, data: any) => {
+            resolve({
+              stdout: stdout.slice(0, 512_000),
+              stderr: stderr.slice(0, 512_000),
+              exitCode: inspectErr ? -1 : (data?.ExitCode ?? 0),
+            });
+          });
+        });
+
+        stream.on('error', (streamErr: any) => {
+          clearTimeout(timer);
+          reject(streamErr);
+        });
+      });
+    });
+  }
   isEnabled(): boolean { return this.config.enabled; }
   isInitialized(): boolean { return this.initialized; }
 }

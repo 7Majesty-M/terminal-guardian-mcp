@@ -22,6 +22,7 @@ import { DockerManager } from './docker/manager.js';
 import { GitManager } from './git/manager.js';
 import { RateLimiter } from './security/rateLimiter.js';
 import { analyzeCommand } from './security/riskAnalyzer.js';
+import { ping, httpRequest, dnsLookup } from './network/diagnostics.js';
 
 import {
   RunCommandSchema,
@@ -39,6 +40,10 @@ import {
   ListProcessesSchema,
   KillProcessSchema,
   GetEnvSchema,
+  PingSchema,
+  HttpRequestSchema,
+  DnsLookupSchema,
+  DockerExecSchema,
 } from './tools/schemas.js';
 import { listProcesses, killProcess } from './tools/processManager.js';
 import { EnvManager } from './system/envManager.js';
@@ -230,6 +235,64 @@ const TOOLS: Tool[] = [
         keys: { type: 'array', items: { type: 'string' }, description: 'Fetch specific keys' },
         includeMasked: { type: 'boolean', description: 'Include masked secrets (default: true)' },
       },
+    },
+    
+  },
+  {
+    name: 'ping',
+    description:
+      'Ping a host to check reachability and measure round-trip latency. Private/loopback addresses are blocked by default.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        host: { type: 'string', description: 'Hostname or IP address to ping' },
+        count: { type: 'number', description: 'Number of packets (default: 4, max: 10)' },
+        allowPrivate: { type: 'boolean', description: 'Allow private/loopback addresses' },
+      },
+      required: ['host'],
+    },
+  },
+  {
+    name: 'http_request',
+    description:
+      'Make an HTTP/HTTPS request and return status, headers, and body. Only http:// and https:// allowed. Response body capped at 512KB.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'Target URL (http:// or https:// only)' },
+        method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'], description: 'HTTP method' },
+        headers: { type: 'object', description: 'Request headers' },
+        body: { type: 'string', description: 'Request body for POST/PUT/PATCH' },
+        followRedirects: { type: 'boolean', description: 'Follow redirects (default: true)' },
+        timeoutMs: { type: 'number', description: 'Timeout in ms (default: 15000)' },
+      },
+      required: ['url'],
+    },
+  },
+  {
+    name: 'dns_lookup',
+    description: 'Resolve a hostname to IP addresses using DNS.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        host: { type: 'string', description: 'Hostname to resolve' },
+      },
+      required: ['host'],
+    },
+  },
+  {
+    name: 'docker_exec',
+    description:
+      'Execute a command inside a running Docker container. Requires confirmed: true. Output capped at 512KB.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        container: { type: 'string', description: 'Container ID or name' },
+        command: { type: 'array', items: { type: 'string' }, description: 'Command as array, e.g. ["ls", "-la"]' },
+        timeout: { type: 'number', description: 'Timeout in ms (default: 30000)' },
+        confirmed: { type: 'boolean', description: 'Must be true to execute' },
+      },
+      required: ['container', 'command'],
     },
   },
 ];
@@ -429,6 +492,51 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const input = GitLogSchema.parse(safeArgs);
         const entries = git.getLog(input.limit, input.path);
         result = { success: true, data: entries, metadata: { count: entries.length } };
+        break;
+      }
+      
+      case 'ping': {
+        const input = PingSchema.parse(safeArgs);
+        const pingResult = await ping(input.host, input.count, input.allowPrivate);
+        result = { success: true, data: pingResult };
+        break;
+      }
+
+      case 'http_request': {
+        const input = HttpRequestSchema.parse(safeArgs);
+        const httpResult = await httpRequest(input.url, {
+          method: input.method,
+          headers: input.headers,
+          body: input.body,
+          followRedirects: input.followRedirects,
+          timeoutMs: input.timeoutMs,
+        });
+        result = { success: httpResult.statusCode >= 200 && httpResult.statusCode < 400, data: httpResult };
+        break;
+      }
+
+      case 'dns_lookup': {
+        const input = DnsLookupSchema.parse(safeArgs);
+        const dnsResult = await dnsLookup(input.host);
+        result = { success: true, data: dnsResult };
+        break;
+      }
+
+      case 'docker_exec': {
+        const input = DockerExecSchema.parse(safeArgs);
+        if (!docker.isEnabled()) {
+          result = { success: false, error: 'Docker integration is disabled in configuration' };
+          break;
+        }
+        if (!input.confirmed) {
+          result = {
+            success: false,
+            error: 'docker_exec requires confirmed: true — executing commands inside containers can be destructive.',
+          };
+          break;
+        }
+        const execResult = await docker.execContainer(input.container, input.command, input.timeout);
+        result = { success: execResult.exitCode === 0, data: execResult };
         break;
       }
 

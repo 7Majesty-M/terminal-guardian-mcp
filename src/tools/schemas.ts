@@ -209,3 +209,98 @@ export const GetEnvSchema = z.object({
 export type ListProcessesInput = z.infer<typeof ListProcessesSchema>;
 export type KillProcessInput = z.infer<typeof KillProcessSchema>;
 export type GetEnvInput = z.infer<typeof GetEnvSchema>;
+
+// ── Network Diagnostics ───────────────────────────────────────
+
+export const PingSchema = z.object({
+  host: z
+    .string()
+    .min(1)
+    .max(253)
+    .describe('Hostname or IP address to ping'),
+  count: z
+    .number()
+    .int()
+    .min(1)
+    .max(10)
+    .optional()
+    .default(4)
+    .describe('Number of ping packets (default: 4, max: 10)'),
+  allowPrivate: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe('Allow pinging private/loopback addresses'),
+});
+
+export const HttpRequestSchema = z.object({
+  url: z
+    .string()
+    .url()
+    .describe('Target URL (http:// or https:// only)'),
+  method: z
+    .enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'])
+    .optional()
+    .default('GET')
+    .describe('HTTP method (default: GET)'),
+  headers: z
+    .record(z.string())
+    .optional()
+    .describe('Request headers as key-value pairs'),
+  body: z
+    .string()
+    .optional()
+    .describe('Request body (for POST, PUT, PATCH)'),
+  followRedirects: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe('Follow HTTP redirects (default: true)'),
+  timeoutMs: z
+    .number()
+    .int()
+    .min(1000)
+    .max(30_000)
+    .optional()
+    .default(15_000)
+    .describe('Request timeout in ms (default: 15000)'),
+});
+
+export const DnsLookupSchema = z.object({
+  host: z
+    .string()
+    .min(1)
+    .max(253)
+    .describe('Hostname to resolve'),
+});
+
+// ── Docker Exec ───────────────────────────────────────────────
+
+export const DockerExecSchema = z.object({
+  container: z
+    .string()
+    .min(1)
+    .describe('Container ID or name'),
+  command: z
+    .array(z.string())
+    .min(1)
+    .describe('Command to execute as array, e.g. ["ls", "-la", "/app"]'),
+  timeout: z
+    .number()
+    .int()
+    .min(1000)
+    .max(120_000)
+    .optional()
+    .default(30_000)
+    .describe('Execution timeout in ms (default: 30000)'),
+  confirmed: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe('Required — exec inside a container requires explicit confirmation'),
+});
+
+export type PingInput = z.infer<typeof PingSchema>;
+export type HttpRequestInput = z.infer<typeof HttpRequestSchema>;
+export type DnsLookupInput = z.infer<typeof DnsLookupSchema>;
+export type DockerExecInput = z.infer<typeof DockerExecSchema>;
