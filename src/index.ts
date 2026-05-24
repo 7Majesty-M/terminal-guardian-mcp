@@ -23,6 +23,8 @@ import { GitManager } from './git/manager.js';
 import { RateLimiter } from './security/rateLimiter.js';
 import { analyzeCommand } from './security/riskAnalyzer.js';
 import { ping, httpRequest, dnsLookup } from './network/diagnostics.js';
+import { generateCommitMessages } from './git/commitGenerator.js';
+import { listTemplates, applyTemplate } from './workspace/templates.js';
 
 import {
   RunCommandSchema,
@@ -44,6 +46,9 @@ import {
   HttpRequestSchema,
   DnsLookupSchema,
   DockerExecSchema,
+  GitSuggestCommitSchema,
+  ListTemplatesSchema,
+  ApplyTemplateSchema,
 } from './tools/schemas.js';
 import { listProcesses, killProcess } from './tools/processManager.js';
 import { EnvManager } from './system/envManager.js';
@@ -207,6 +212,50 @@ const TOOLS: Tool[] = [
         sortBy: { type: 'string', enum: ['cpu', 'memory', 'pid', 'name'], description: 'Sort order (default: cpu)' },
         limit: { type: 'number', description: 'Max results (default: 50)' },
       },
+    },
+  },
+  {
+    name: 'git_suggest_commit',
+    description:
+      'Generate AI-powered commit message suggestions from git diff using Claude. Returns conventional commit format suggestions with type, scope, and subject. Requires ANTHROPIC_API_KEY environment variable.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Repository path' },
+        staged: { type: 'boolean', description: 'Use staged diff (default: true)' },
+        count: { type: 'number', description: 'Number of suggestions (1-5, default: 3)' },
+        style: { type: 'string', enum: ['conventional', 'simple', 'detailed'], description: 'Commit style' },
+      },
+    },
+  },
+  {
+    name: 'list_templates',
+    description:
+      'List available workspace templates for scaffolding new projects. Includes Node.js, TypeScript, Python, FastAPI, React, Next.js, Express, and MCP server templates.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tag: { type: 'string', description: 'Filter by tag (e.g. "python", "frontend", "mcp")' },
+      },
+    },
+  },
+  {
+    name: 'apply_template',
+    description:
+      'Scaffold a new project from a template. Creates files and directories in the target path within the workspace. Safe — cannot write outside workspace root.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        templateId: {
+          type: 'string',
+          enum: ['node-typescript', 'node-javascript', 'python-fastapi', 'python-cli', 'react-vite', 'nextjs', 'express-api', 'mcp-server'],
+          description: 'Template to use',
+        },
+        projectName: { type: 'string', description: 'Project name' },
+        targetDir: { type: 'string', description: 'Target directory (default: ".")' },
+        overwrite: { type: 'boolean', description: 'Overwrite existing files' },
+      },
+      required: ['templateId', 'projectName'],
     },
   },
   {
@@ -519,6 +568,82 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const input = DnsLookupSchema.parse(safeArgs);
         const dnsResult = await dnsLookup(input.host);
         result = { success: true, data: dnsResult };
+        break;
+      }
+
+      case 'git_suggest_commit': {
+        const input = GitSuggestCommitSchema.parse(safeArgs);
+        const repoPath = input.path
+          ? `${config.workspace.rootDir}/${input.path}`
+          : config.workspace.rootDir;
+
+        const diffs = git.getDiff(input.staged ?? true, undefined, input.path);
+        const status = git.getStatus(input.path);
+
+        if (diffs.length === 0) {
+          result = {
+            success: false,
+            error: input.staged
+              ? 'No staged changes found. Run `git add` first, or set staged: false for working tree diff.'
+              : 'No changes found in working tree.',
+          };
+          break;
+        }
+
+        const diffText = diffs.map((d) => {
+          const chunks = d.chunks.map((c) => c.lines.join('\n')).join('\n');
+          return `--- a/${d.file}\n+++ b/${d.file}\n${chunks}`;
+        }).join('\n\n');
+
+        const stagedFiles = input.staged
+          ? status.staged.map((f) => f.path)
+          : status.unstaged.map((f) => f.path);
+
+        const commitResult = await generateCommitMessages({
+          diff: diffText,
+          stagedFiles,
+          branch: status.branch,
+          count: input.count,
+          style: input.style,
+        });
+
+        result = { success: true, data: commitResult };
+        break;
+      }
+
+      case 'list_templates': {
+        const input = ListTemplatesSchema.parse(safeArgs);
+        let templates = listTemplates();
+        if (input.tag) {
+          templates = templates.filter((t) =>
+            t.tags.includes(input.tag!.toLowerCase()),
+          );
+        }
+        result = {
+          success: true,
+          data: templates.map((t) => ({
+            id: t.id,
+            name: t.name,
+            description: t.description,
+            tags: t.tags,
+            fileCount: t.files.length,
+            postInstall: t.postInstall ?? [],
+          })),
+          metadata: { count: templates.length },
+        };
+        break;
+      }
+
+      case 'apply_template': {
+        const input = ApplyTemplateSchema.parse(safeArgs);
+        const applyResult = applyTemplate({
+          templateId: input.templateId as import('./workspace/templates.js').TemplateId,
+          projectName: input.projectName,
+          targetDir: input.targetDir ?? '.',
+          rootDir: config.workspace.rootDir,
+          overwrite: input.overwrite,
+        });
+        result = { success: true, data: applyResult };
         break;
       }
 

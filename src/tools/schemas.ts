@@ -304,3 +304,73 @@ export type PingInput = z.infer<typeof PingSchema>;
 export type HttpRequestInput = z.infer<typeof HttpRequestSchema>;
 export type DnsLookupInput = z.infer<typeof DnsLookupSchema>;
 export type DockerExecInput = z.infer<typeof DockerExecSchema>;
+
+// ── AI Commit Generator ───────────────────────────────────────
+
+export const GitSuggestCommitSchema = z.object({
+  path: z
+    .string()
+    .optional()
+    .describe('Repository path relative to workspace root'),
+  staged: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe('Use staged diff (default: true). False = working tree diff'),
+  count: z
+    .number()
+    .int()
+    .min(1)
+    .max(5)
+    .optional()
+    .default(3)
+    .describe('Number of suggestions to generate (default: 3)'),
+  style: z
+    .enum(['conventional', 'simple', 'detailed'])
+    .optional()
+    .default('conventional')
+    .describe('Commit message style (default: conventional)'),
+});
+
+// ── Workspace Templates ───────────────────────────────────────
+
+export const ListTemplatesSchema = z.object({
+  tag: z
+    .string()
+    .optional()
+    .describe('Filter templates by tag (e.g. "python", "frontend", "mcp")'),
+});
+
+export const ApplyTemplateSchema = z.object({
+  templateId: z
+    .enum([
+      'node-typescript',
+      'node-javascript',
+      'python-fastapi',
+      'python-cli',
+      'react-vite',
+      'nextjs',
+      'express-api',
+      'mcp-server',
+    ])
+    .describe('Template ID to apply'),
+  projectName: z
+    .string()
+    .min(1)
+    .max(128)
+    .describe('Project name (used in package.json, README, etc.)'),
+  targetDir: z
+    .string()
+    .optional()
+    .default('.')
+    .describe('Target directory relative to workspace root (default: ".")'),
+  overwrite: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe('Overwrite existing files (default: false)'),
+});
+
+export type GitSuggestCommitInput = z.infer<typeof GitSuggestCommitSchema>;
+export type ListTemplatesInput = z.infer<typeof ListTemplatesSchema>;
+export type ApplyTemplateInput = z.infer<typeof ApplyTemplateSchema>;

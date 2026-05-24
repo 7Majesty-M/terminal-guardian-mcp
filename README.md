@@ -62,6 +62,27 @@ Every command passes through a multi-layer safety analysis before execution:
 - Output size limits to prevent memory exhaustion
 - Cross-platform: auto-detects bash, sh, PowerShell, or cmd
 
+### 🤖 AI Commit Message Generator *(new in v1.3)*
+- Analyzes `git diff` and generates [Conventional Commits](https://www.conventionalcommits.org) suggestions via Claude
+- Returns 1–5 suggestions with type, scope, subject, body, and breaking change flags
+- Three styles: `conventional`, `simple`, `detailed`
+- Automatically truncates large diffs to keep API costs low
+- Requires `ANTHROPIC_API_KEY` environment variable
+
+### 📦 Workspace Templates *(new in v1.3)*
+Scaffold new projects instantly from 8 production-ready templates:
+
+| Template ID | Stack |
+|-------------|-------|
+| `node-typescript` | Node.js + TypeScript + ESLint + Vitest |
+| `node-javascript` | Node.js ESM |
+| `python-fastapi` | FastAPI + Pydantic v2 + pytest |
+| `python-cli` | Typer + Rich |
+| `react-vite` | React 18 + Vite + TypeScript |
+| `nextjs` | Next.js 15 App Router + TypeScript |
+| `express-api` | Express + Zod + TypeScript |
+| `mcp-server` | MCP Server starter (TypeScript) |
+
 ### 🔎 Process Management
 - List all running processes with CPU, memory, PID, and command
 - Filter by name or command substring, sort by CPU / memory / PID / name
@@ -164,12 +185,15 @@ Add Terminal Guardian to your Claude Desktop configuration:
       "command": "npx",
       "args": ["terminal-guardian-mcp"],
       "env": {
-        "GUARDIAN_CONFIG": "/path/to/your/terminal-guardian.config.json"
+        "GUARDIAN_CONFIG": "/path/to/your/terminal-guardian.config.json",
+        "ANTHROPIC_API_KEY": "sk-ant-..."
       }
     }
   }
 }
 ```
+
+> `ANTHROPIC_API_KEY` is only required for the `git_suggest_commit` tool. All other tools work without it.
 
 Or if installed globally:
 
@@ -192,7 +216,7 @@ After saving, **restart Claude Desktop**. You should see Terminal Guardian appea
 
 ## MCP Tools
 
-Terminal Guardian exposes **18 tools** across 6 domains.
+Terminal Guardian exposes **21 tools** across 7 domains.
 
 ### Terminal
 
@@ -250,18 +274,98 @@ Analyze a command without running it.
 }
 ```
 
+### Git
+
+#### `git_status`
+```json
+{ "path": "." }
+```
+
+#### `git_diff`
+```json
+{ "staged": false, "file": "src/api.ts" }
+```
+
+#### `git_log`
+```json
+{ "limit": 20 }
+```
+
+#### `git_suggest_commit` ✨
+Generate AI-powered commit message suggestions from your staged diff.
+
+```json
+{ "staged": true, "count": 3, "style": "conventional" }
+```
+
+**Returns:**
+```json
+{
+  "suggestions": [
+    {
+      "message": "feat(auth): add JWT refresh token rotation\n\nImplements automatic rotation on each use\nto prevent token reuse attacks.",
+      "type": "feat",
+      "scope": "auth",
+      "subject": "add JWT refresh token rotation",
+      "breaking": false,
+      "confidence": "high"
+    }
+  ],
+  "model": "claude-sonnet-4-20250514",
+  "tokensUsed": 312,
+  "diffSummary": "Added refresh token rotation to AuthService",
+  "truncated": false
+}
+```
+
+### Workspace Templates
+
+#### `list_templates`
+List all available project templates with optional tag filtering.
+
+```json
+{ "tag": "python" }
+```
+
+**Returns:**
+```json
+[
+  { "id": "python-fastapi", "name": "Python FastAPI", "tags": ["python", "api", "backend"], "fileCount": 6, "postInstall": ["python -m venv .venv", "pip install -r requirements.txt"] },
+  { "id": "python-cli",     "name": "Python CLI Tool", "tags": ["python", "cli"],           "fileCount": 4 }
+]
+```
+
+#### `apply_template` ✨
+Scaffold a new project from a template. Safe — cannot write outside workspace root.
+
+```json
+{
+  "templateId": "mcp-server",
+  "projectName": "my-mcp-tool",
+  "targetDir": "./projects/my-mcp-tool"
+}
+```
+
+**Returns:**
+```json
+{
+  "templateId": "mcp-server",
+  "projectName": "my-mcp-tool",
+  "targetDir": "/workspace/projects/my-mcp-tool",
+  "filesCreated": ["package.json", "tsconfig.json", "src/index.ts", "claude_desktop_config.example.json", ".gitignore", "README.md"],
+  "filesSkipped": [],
+  "postInstall": ["npm install", "npm run build"]
+}
+```
+
 ### Processes
 
 #### `list_processes`
-List running system processes sorted by CPU, memory, PID, or name.
-
 ```json
 { "filter": "node", "sortBy": "memory", "limit": 20 }
 ```
 
 #### `kill_process`
-Terminate a process by PID. System processes are always protected.
-
 ```json
 { "pid": 12345, "signal": "SIGTERM" }
 ```
@@ -271,98 +375,38 @@ Terminate a process by PID. System processes are always protected.
 ### Environment
 
 #### `get_env`
-Read environment variables with automatic secret masking.
-
 ```json
 { "keys": ["NODE_ENV", "PORT", "DATABASE_URL"] }
 ```
 
-**Returns:**
-```json
-{
-  "total": 3,
-  "masked": 1,
-  "visible": 2,
-  "variables": [
-    { "key": "NODE_ENV",     "value": "production", "masked": false, "category": "runtime" },
-    { "key": "PORT",         "value": "3000",        "masked": false, "category": "unknown" },
-    { "key": "DATABASE_URL", "value": "po**...db",   "masked": true,  "category": "secret"  }
-  ]
-}
-```
+**Secret masking:**
 
-Secret masking examples:
-
-| Original value | Shown as |
-|----------------|----------|
+| Original | Shown as |
+|----------|----------|
 | `sk-proj-abc123...xyz` | `sk**...yz` |
 | `postgres://user:pass@host/db` | `po**...db` |
 | `eyJhbGci...` (JWT) | `ey**...` |
-| `ab` (too short) | `****` |
+| `ab` | `****` |
 
 ### Network
 
 #### `ping`
-Check host reachability and measure latency.
-
 ```json
 { "host": "api.github.com", "count": 4 }
 ```
 
-**Returns:**
-```json
-{
-  "host": "api.github.com",
-  "reachable": true,
-  "transmitted": 4,
-  "received": 4,
-  "packetLoss": 0,
-  "minMs": 12.4,
-  "avgMs": 14.1,
-  "maxMs": 16.8
-}
-```
-
 #### `http_request`
-Make an HTTP/HTTPS request.
-
 ```json
 {
-  "url": "https://api.github.com/repos/octocat/hello-world",
+  "url": "https://api.github.com/zen",
   "method": "GET",
   "headers": { "Accept": "application/json" }
 }
 ```
 
-**Returns:**
-```json
-{
-  "statusCode": 200,
-  "statusText": "OK",
-  "headers": { "content-type": "application/json; charset=utf-8" },
-  "body": "...",
-  "bodyTruncated": false,
-  "durationMs": 320,
-  "redirectCount": 0
-}
-```
-
 #### `dns_lookup`
-Resolve a hostname to IP addresses.
-
 ```json
 { "host": "github.com" }
-```
-
-**Returns:**
-```json
-{
-  "host": "github.com",
-  "addresses": [
-    { "type": "A", "value": "140.82.121.4" }
-  ],
-  "queryTimeMs": 18
-}
 ```
 
 ### Filesystem
@@ -384,47 +428,10 @@ Resolve a hostname to IP addresses.
 
 ### Docker *(requires `docker.enabled: true`)*
 
-#### `docker_ps`
-```json
-{ "all": true }
-```
-
-#### `docker_logs`
-```json
-{ "container": "my-app", "tail": 200, "timestamps": true }
-```
-
-#### `docker_stats`
-```json
-{ "container": "my-app" }
-```
-
-#### `docker_exec`
-Execute a command inside a running container. Requires `confirmed: true`.
+#### `docker_ps` · `docker_logs` · `docker_stats` · `docker_exec`
 
 ```json
-{
-  "container": "my-app",
-  "command": ["node", "--version"],
-  "confirmed": true
-}
-```
-
-### Git
-
-#### `git_status`
-```json
-{ "path": "." }
-```
-
-#### `git_diff`
-```json
-{ "staged": false, "file": "src/api.ts" }
-```
-
-#### `git_log`
-```json
-{ "limit": 20 }
+{ "container": "my-app", "command": ["node", "--version"], "confirmed": true }
 ```
 
 ---
@@ -434,11 +441,9 @@ Execute a command inside a running container. Requires `confirmed: true`.
 ```
 terminal-guardian-mcp/
 ├── src/
-│   ├── index.ts              # MCP server entrypoint & tool routing (18 tools)
-│   ├── types/
-│   │   └── index.ts          # Shared TypeScript types
-│   ├── config/
-│   │   └── loader.ts         # Config file loading with deep merge
+│   ├── index.ts              # MCP server entrypoint & tool routing (21 tools)
+│   ├── types/index.ts        # Shared TypeScript types
+│   ├── config/loader.ts      # Config file loading with deep merge
 │   ├── security/
 │   │   ├── riskAnalyzer.ts   # Multi-layer command risk analysis engine
 │   │   └── rateLimiter.ts    # Per-minute/hour request throttling
@@ -455,33 +460,22 @@ terminal-guardian-mcp/
 │   ├── docker/
 │   │   └── manager.ts        # Dockerode integration + container exec
 │   ├── git/
-│   │   └── manager.ts        # Git operations via child_process
+│   │   ├── manager.ts        # Git operations via child_process
+│   │   └── commitGenerator.ts # AI commit message generation (Anthropic API)
+│   ├── workspace/
+│   │   └── templates.ts      # Project scaffolding — 8 templates
 │   └── logging/
 │       └── logger.ts         # Pino-based structured logging
-├── tests/                    # Vitest unit tests (108 tests)
+├── tests/                    # Vitest unit tests (136 tests)
 ├── .github/workflows/        # CI/CD pipeline (Node 18/20/22)
 ├── Dockerfile                # Multi-stage build, non-root user
 ├── docker-compose.yml
-├── terminal-guardian.config.json
-└── README.md
+└── terminal-guardian.config.json
 ```
-
-### Design Principles
-
-- **Security First** — risk analysis runs before every command, not as an afterthought
-- **Least Privilege** — Docker disabled, git write-ops disabled, sudo blocked by default
-- **Never Reveal Secrets** — env vars masked at read time, raw values never reach the AI context
-- **Network Boundaries** — private/internal addresses blocked, only http/https allowed
-- **Transparency** — every action is logged with full context
-- **Defense in Depth** — blocklist → pattern analysis → rate limit → output limits
-- **Type Safety** — strict TypeScript + Zod runtime validation on all tool inputs
-- **Cross-Platform** — auto-detects the right shell on Linux, macOS, and Windows
 
 ---
 
 ## Configuration
-
-Create `terminal-guardian.config.json` in your project root (or specify via `GUARDIAN_CONFIG` env var):
 
 ```json
 {
@@ -580,6 +574,8 @@ Terminal Guardian operates on a **deny-by-default** model with explicit allowlis
 ### Always safe
 - Read-only shell commands: `ls`, `cat`, `grep`, `find`
 - Git inspection: `status`, `log`, `diff`, `branch`
+- `git_suggest_commit` — reads diff only, never writes anything
+- `list_templates` — no filesystem changes
 - Docker read operations: `ps`, `images`, `inspect`, `stats`, `logs`
 - npm read operations: `list`, `outdated`, `audit`
 - System info: `whoami`, `uptime`, `df`, `uname`
@@ -596,6 +592,7 @@ Terminal Guardian operates on a **deny-by-default** model with explicit allowlis
 - **Secret leakage** — env vars masked at read time, raw values never reach AI context
 - **SSRF protection** — private network ranges blocked in all network tools
 - **Data exfiltration** — output size limits, no secret logging by default
+- **Workspace isolation** — templates and filesystem tools cannot escape workspace root
 
 ---
 
@@ -664,6 +661,10 @@ npm run build         # Production build
 
 > "Check the git status of my project and tell me what files have changed"
 
+> "I've staged my changes — write me a commit message"
+
+> "Scaffold a new FastAPI project in ./services/users"
+
 > "Which process is eating the most CPU right now?"
 
 > "Show me all environment variables related to Node — keep secrets masked"
@@ -671,8 +672,6 @@ npm run build         # Production build
 > "Is api.github.com reachable? What's the latency?"
 
 > "Make a GET request to https://api.github.com/zen and show me the response"
-
-> "What IPs does github.com resolve to?"
 
 > "Run the test suite and show me any failures"
 
@@ -704,6 +703,27 @@ Claude: [calls run_command with confirmed: true]
 ```
 User: Run rm -rf /
 Claude: "Terminal Guardian has blocked this — it would delete the root filesystem."
+```
+
+**AI commit message:**
+```
+User: I've staged my auth refactor, suggest a commit message
+Claude: [calls git_suggest_commit {"staged": true, "count": 3}]
+
+  1. refactor(auth): extract token validation into AuthGuard class
+  2. refactor(auth): decouple token logic from UserService
+  3. chore(auth): reorganize auth module structure
+
+  Which one would you like to use?
+```
+
+**Scaffold a project:**
+```
+User: Create a new MCP server called "weather-mcp"
+Claude: [calls apply_template {"templateId": "mcp-server", "projectName": "weather-mcp", "targetDir": "./weather-mcp"}]
+
+  Created 6 files. Next steps:
+  cd weather-mcp && npm install && npm run build
 ```
 
 **Network check:**
@@ -744,11 +764,11 @@ Claude: [calls docker_exec {"container": "api", "command": ["node", "--version"]
 - [x] **v1.1** — Environment variable inspection with automatic secret masking
 - [x] **v1.2** — Network diagnostics (`ping`, `http_request`, `dns_lookup`)
 - [x] **v1.2** — Docker container exec (`docker_exec`) with confirmation gate
+- [x] **v1.3** — AI-powered commit message generation (`git_suggest_commit`)
+- [x] **v1.3** — Workspace templates — 8 project starters (`list_templates`, `apply_template`)
 
 ### Planned
 
-- [ ] **v1.3** — AI-powered commit message generation via git diff analysis
-- [ ] **v1.3** — Workspace templates for common project types
 - [ ] **v1.4** — WebSocket transport support (alongside stdio)
 - [ ] **v1.5** — Remote SSH execution with key-based auth
 - [ ] **v2.0** — Full gVisor/nsjail sandbox integration
