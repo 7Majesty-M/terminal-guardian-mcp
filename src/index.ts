@@ -52,6 +52,7 @@ import {
 } from './tools/schemas.js';
 import { listProcesses, killProcess } from './tools/processManager.js';
 import { EnvManager } from './system/envManager.js';
+import { WsTransportServer } from './transport/wsServer.js';
 
 // ─── Bootstrap ───────────────────────────────────────────────
 const config = loadConfig(process.env['GUARDIAN_CONFIG']);
@@ -357,12 +358,9 @@ const server = new Server(
   },
 );
 
-// List tools
-server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
-
 // Handle tool calls
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
+async function handleToolCall(request: Parameters<Parameters<typeof server.setRequestHandler>[1]>[0]) {
+    const { name, arguments: args } = request.params;
 
   // Rate limit check
   const rl = rateLimiter.check();
@@ -685,22 +683,99 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       isError: true,
     };
   }
-});
+}
+
+// ─── CLI argument parsing ─────────────────────────────────────
+function parseArgs(): {
+  transport: 'stdio' | 'ws';
+  port: number;
+  host: string;
+  token: string | undefined;
+} {
+  const args = process.argv.slice(2);
+
+  const getArg = (flag: string): string | undefined => {
+    const idx = args.indexOf(flag);
+    return idx !== -1 ? args[idx + 1] : undefined;
+  };
+
+  const hasFlag = (flag: string): boolean => args.includes(flag);
+
+  const transportArg = getArg('--transport') ?? getArg('-t');
+  const transport = transportArg === 'ws' ? 'ws' : 'stdio';
+  const port = parseInt(getArg('--port') ?? getArg('-p') ?? '3000', 10);
+  const host = getArg('--host') ?? '127.0.0.1';
+  const token = getArg('--token') ?? process.env['GUARDIAN_TOKEN'];
+
+  if (hasFlag('--help') || hasFlag('-h')) {
+    process.stderr.write(`
+Terminal Guardian MCP — Secure MCP Server
+
+Usage:
+  terminal-guardian-mcp [options]
+
+Options:
+  --transport, -t  Transport mode: stdio (default) or ws
+  --port, -p       WebSocket port (default: 3000)
+  --host           WebSocket host (default: 127.0.0.1)
+  --token          Auth token for WebSocket mode (or set GUARDIAN_TOKEN env var)
+  --help, -h       Show this help
+
+Examples:
+  terminal-guardian-mcp                          # stdio mode (Claude Desktop)
+  terminal-guardian-mcp --transport ws           # WebSocket on port 3000
+  terminal-guardian-mcp --transport ws --port 8080 --token mysecret
+`);
+    process.exit(0);
+  }
+
+  return { transport, port, host, token };
+}
 
 // ─── Start ────────────────────────────────────────────────────
 async function main(): Promise<void> {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  process.stderr.write('\n✅ Terminal Guardian MCP server started successfully\n');
-  process.stderr.write(`   Workspace : ${config.workspace.rootDir}\n`);
-  process.stderr.write(`   Log dir   : ${config.logging.logDir}\n`);
-  process.stderr.write(`   Log level : ${config.logging.level}\n\n`);
-  logger.info('Terminal Guardian MCP server ready');
+  const { transport, port, host, token } = parseArgs();
+
+  if (transport === 'ws') {
+    // WebSocket mode — one HTTP/WS server, N MCP server instances
+    const wsServer = new WsTransportServer(
+      { port, host, token },
+      config,
+      () => {
+        // Factory: creates a fresh MCP Server for each WebSocket connection
+        const s = new Server(
+          { name: 'terminal-guardian-mcp', version: '1.0.0' },
+          { capabilities: { tools: {} } },
+        );
+        s.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
+        s.setRequestHandler(CallToolRequestSchema, handleToolCall);
+        return s;
+      },
+    );
+
+    await wsServer.start();
+
+    // Keep process alive
+    process.on('SIGINT', () => {
+      process.stderr.write('\nShutting down...\n');
+      process.exit(0);
+    });
+  } else {
+    // stdio mode (default — Claude Desktop)
+    server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
+    server.setRequestHandler(CallToolRequestSchema, handleToolCall);
+
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+
+    process.stderr.write('\n✅ Terminal Guardian MCP server started (stdio)\n');
+    process.stderr.write(`   Workspace : ${config.workspace.rootDir}\n\n`);
+    logger.info('Terminal Guardian MCP server ready (stdio)');
+  }
 }
 
 main().catch((err) => {
   const message = err instanceof Error ? err.message : String(err);
   process.stderr.write(`Fatal error: ${message}\n`);
-  process.stderr.write('   Server failed to start. Check your config.\n\n');
   process.exit(1);
 });

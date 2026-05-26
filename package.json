@@ -42,11 +42,13 @@
     "pino": "^9.4.0",
     "pino-pretty": "^11.2.2",
     "terminal-guardian-mcp": "^1.2.0",
+    "ws": "^8.21.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/dockerode": "^3.3.31",
     "@types/node": "^22.7.4",
+    "@types/ws": "^8.5.13",
     "@typescript-eslint/eslint-plugin": "^8.8.0",
     "@typescript-eslint/parser": "^8.8.0",
     "@vitest/coverage-v8": "^2.1.1",

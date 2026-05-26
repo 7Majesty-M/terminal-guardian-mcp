@@ -136,6 +136,16 @@ Scaffold new projects instantly from 8 production-ready templates:
 - In-memory bucket algorithm with automatic reset
 - Clear error messages with retry-after hints
 
+### 🔌 WebSocket Transport *(new in v1.4)*
+- Run as a persistent HTTP + WebSocket server — multiple clients connect simultaneously
+- Every WebSocket connection gets its own isolated MCP Server instance
+- Bearer token authentication (via `Authorization` header or `?token=` query string)
+- Built-in **web dashboard** at `GET /` — live stats, connection count, uptime, config snippet
+- Health check at `GET /health` and stats API at `GET /stats`
+- Keepalive ping/pong with automatic dead connection cleanup
+- Configurable max connections (default: 10)
+- Works alongside stdio — choose the mode at startup via CLI flag
+
 ---
 
 ## Quick Start
@@ -163,9 +173,17 @@ npm run build
 ### Run directly
 
 ```bash
+# stdio mode — for Claude Desktop (default)
 terminal-guardian-mcp
-# or from source:
-node dist/index.js
+
+# WebSocket mode — persistent server, multiple clients
+terminal-guardian-mcp --transport ws --port 3000
+
+# WebSocket with token auth
+terminal-guardian-mcp --transport ws --port 3000 --token mysecret
+
+# Help
+terminal-guardian-mcp --help
 ```
 
 ---
@@ -766,10 +784,10 @@ Claude: [calls docker_exec {"container": "api", "command": ["node", "--version"]
 - [x] **v1.2** — Docker container exec (`docker_exec`) with confirmation gate
 - [x] **v1.3** — AI-powered commit message generation (`git_suggest_commit`)
 - [x] **v1.3** — Workspace templates — 8 project starters (`list_templates`, `apply_template`)
+- [x] **v1.4** — WebSocket transport (alongside stdio) with auth, dashboard, multi-client
 
 ### Planned
 
-- [ ] **v1.4** — WebSocket transport support (alongside stdio)
 - [ ] **v1.5** — Remote SSH execution with key-based auth
 - [ ] **v2.0** — Full gVisor/nsjail sandbox integration
 - [ ] **v2.0** — Per-session permission scoping
