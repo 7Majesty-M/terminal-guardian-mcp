@@ -50,6 +50,13 @@ const DEFAULT_CONFIG: GuardianConfig = {
     logSecurityEvents: true,
     prettyPrint: false,
   },
+  ssh: {
+    enabled: false,
+    timeout: 30_000,
+    keepaliveInterval: 10_000,
+    maxConnections: 5,
+    profiles: {},
+  },
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
