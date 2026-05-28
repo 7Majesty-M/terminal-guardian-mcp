@@ -45,5 +45,12 @@
     "logOutputs": false,
     "logSecurityEvents": true,
     "prettyPrint": false
+  },
+  "ssh": {
+    "enabled": false,
+    "timeout": 30000,
+    "keepaliveInterval": 10000,
+    "maxConnections": 5,
+    "profiles": {}
   }
 }

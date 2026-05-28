@@ -374,3 +374,46 @@ export const ApplyTemplateSchema = z.object({
 export type GitSuggestCommitInput = z.infer<typeof GitSuggestCommitSchema>;
 export type ListTemplatesInput = z.infer<typeof ListTemplatesSchema>;
 export type ApplyTemplateInput = z.infer<typeof ApplyTemplateSchema>;
+
+// ── SSH ───────────────────────────────────────────────────────
+
+export const SshExecSchema = z.object({
+  profile: z
+    .string()
+    .min(1)
+    .describe('SSH profile name from config (e.g. "prod", "staging")'),
+  command: z
+    .string()
+    .min(1)
+    .max(4096)
+    .describe('Shell command to execute on the remote host'),
+  cwd: z
+    .string()
+    .optional()
+    .describe('Working directory on the remote host'),
+  timeout: z
+    .number()
+    .int()
+    .min(1000)
+    .max(300_000)
+    .optional()
+    .describe('Execution timeout in ms (default: 30000)'),
+  confirmed: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe('Confirm execution of WARNING-level commands'),
+});
+
+export const SshTestSchema = z.object({
+  profile: z
+    .string()
+    .min(1)
+    .describe('SSH profile name to test connectivity for'),
+});
+
+export const SshListProfilesSchema = z.object({});
+
+export type SshExecInput = z.infer<typeof SshExecSchema>;
+export type SshTestInput = z.infer<typeof SshTestSchema>;
+export type SshListProfilesInput = z.infer<typeof SshListProfilesSchema>;

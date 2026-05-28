@@ -49,10 +49,15 @@ import {
   GitSuggestCommitSchema,
   ListTemplatesSchema,
   ApplyTemplateSchema,
+  SshExecSchema, 
+  SshTestSchema, 
+  SshListProfilesSchema,
 } from './tools/schemas.js';
 import { listProcesses, killProcess } from './tools/processManager.js';
 import { EnvManager } from './system/envManager.js';
 import { WsTransportServer } from './transport/wsServer.js';
+import { SshManager } from './ssh/manager.js';
+import { SshExecutor } from './ssh/executor.js';
 
 // ─── Bootstrap ───────────────────────────────────────────────
 const config = loadConfig(process.env['GUARDIAN_CONFIG']);
@@ -64,6 +69,15 @@ const docker = new DockerManager(config.docker);
 const git = new GitManager(config.git, config.workspace.rootDir);
 const rateLimiter = new RateLimiter(config.rateLimit);
 const envManager = new EnvManager();
+
+const sshManager = new SshManager(config.ssh ?? {
+  enabled: false,
+  timeout: 30_000,
+  keepaliveInterval: 10_000,
+  maxConnections: 5,
+  profiles: {},
+});
+const sshExecutor = new SshExecutor(sshManager, config);
 
 logger.info({ version: '1.0.0', workspace: config.workspace.rootDir }, 'Terminal Guardian MCP starting');
 
@@ -344,6 +358,38 @@ const TOOLS: Tool[] = [
       },
       required: ['container', 'command'],
     },
+  },
+  {
+    name: 'ssh_exec',
+    description:
+      'Execute a shell command on a remote server via SSH. Uses the same risk analysis engine as local execution. Requires a named SSH profile in config.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        profile: { type: 'string', description: 'SSH profile name (e.g. "prod", "staging")' },
+        command: { type: 'string', description: 'Command to run on the remote host' },
+        cwd: { type: 'string', description: 'Working directory on the remote host' },
+        timeout: { type: 'number', description: 'Timeout in ms (default: 30000)' },
+        confirmed: { type: 'boolean', description: 'Confirm WARNING-level commands' },
+      },
+      required: ['profile', 'command'],
+    },
+  },
+  {
+    name: 'ssh_test',
+    description: 'Test SSH connectivity to a configured profile. Returns latency and server version.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        profile: { type: 'string', description: 'SSH profile name to test' },
+      },
+      required: ['profile'],
+    },
+  },
+  {
+    name: 'ssh_list_profiles',
+    description: 'List all configured SSH profiles with their host, port, username, and auth method.',
+    inputSchema: { type: 'object', properties: {} },
   },
 ];
 
@@ -660,6 +706,41 @@ async function handleToolCall(request: Parameters<Parameters<typeof server.setRe
         }
         const execResult = await docker.execContainer(input.container, input.command, input.timeout);
         result = { success: execResult.exitCode === 0, data: execResult };
+        break;
+      }
+
+      case 'ssh_exec': {
+        const input = SshExecSchema.parse(safeArgs);
+        if (!sshManager.isEnabled()) {
+          result = { success: false, error: 'SSH integration is disabled. Set ssh.enabled: true in config.' };
+          break;
+        }
+        const sshResult = await sshExecutor.execute({
+          profileName: input.profile,
+          command: input.command,
+          cwd: input.cwd,
+          timeout: input.timeout,
+          confirmed: input.confirmed,
+        });
+        result = { success: sshResult.exitCode === 0, data: sshResult };
+        break;
+      }
+
+      case 'ssh_test': {
+        const input = SshTestSchema.parse(safeArgs);
+        if (!sshManager.isEnabled()) {
+          result = { success: false, error: 'SSH integration is disabled.' };
+          break;
+        }
+        const testResult = await sshManager.testConnection(input.profile);
+        result = { success: testResult.connected, data: testResult };
+        break;
+      }
+
+      case 'ssh_list_profiles': {
+        SshListProfilesSchema.parse(safeArgs);
+        const profiles = sshManager.listProfiles();
+        result = { success: true, data: profiles, metadata: { count: profiles.length } };
         break;
       }
 

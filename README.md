@@ -146,6 +146,15 @@ Scaffold new projects instantly from 8 production-ready templates:
 - Configurable max connections (default: 10)
 - Works alongside stdio — choose the mode at startup via CLI flag
 
+### 🖥️ Remote SSH Execution *(new in v1.5)*
+- Execute commands on remote servers via SSH — with the **same risk analysis** as local execution
+- Named server profiles in config (`prod`, `staging`, `dev`, ...)
+- Key-based auth (reads `~/.ssh/id_rsa` or any specified key path) and password auth
+- Connection pool — reuses SSH sessions, no new handshake on every command
+- Host fingerprint verification to protect against MITM attacks
+- `BLOCKED` / `WARNING` / `DANGEROUS` rules apply identically on remote hosts
+- Configurable timeout, max connections, keepalive interval
+
 ---
 
 ## Quick Start
@@ -230,11 +239,36 @@ Or if installed globally:
 
 After saving, **restart Claude Desktop**. You should see Terminal Guardian appear in the tools list.
 
+### WebSocket mode (remote / persistent server)
+
+If you're running Terminal Guardian as a persistent WebSocket server (e.g. on a remote machine or in Docker), connect via URL instead:
+
+```json
+{
+  "mcpServers": {
+    "terminal-guardian": {
+      "url": "ws://localhost:3000",
+      "headers": {
+        "Authorization": "Bearer mysecret"
+      }
+    }
+  }
+}
+```
+
+```bash
+# Start the server first
+terminal-guardian-mcp --transport ws --port 3000 --token mysecret
+
+# Then open the dashboard in your browser
+open http://localhost:3000
+```
+
 ---
 
 ## MCP Tools
 
-Terminal Guardian exposes **21 tools** across 7 domains.
+Terminal Guardian exposes **24 tools** across 8 domains.
 
 ### Terminal
 
@@ -291,6 +325,70 @@ Analyze a command without running it.
   "recommendation": "Review this command carefully before proceeding."
 }
 ```
+
+### SSH
+
+#### `ssh_list_profiles`
+List all configured SSH profiles.
+
+```json
+{}
+```
+
+**Returns:**
+```json
+[
+  { "name": "prod",    "host": "prod.example.com", "port": 22, "username": "deploy",  "authMethod": "key",      "connected": false },
+  { "name": "staging", "host": "stg.example.com",  "port": 22, "username": "ubuntu",  "authMethod": "key",      "connected": true  }
+]
+```
+
+#### `ssh_test`
+Test SSH connectivity and measure latency.
+
+```json
+{ "profile": "prod" }
+```
+
+**Returns:**
+```json
+{
+  "profile": "prod",
+  "host": "prod.example.com",
+  "port": 22,
+  "username": "deploy",
+  "connected": true,
+  "latencyMs": 42
+}
+```
+
+#### `ssh_exec` ✨
+Execute a command on a remote server. Uses the same risk engine as local execution.
+
+```json
+{
+  "profile": "prod",
+  "command": "systemctl status nginx",
+  "cwd": "/var/app"
+}
+```
+
+**Returns:**
+```json
+{
+  "profile": "prod",
+  "host": "prod.example.com",
+  "command": "systemctl status nginx",
+  "exitCode": 0,
+  "stdout": "● nginx.service - A high performance web server...",
+  "stderr": "",
+  "duration": 312,
+  "timedOut": false,
+  "riskAssessment": { "level": "SAFE", "score": 5, "blocked": false }
+}
+```
+
+> Dangerous commands (`rm -rf /`, `shutdown`, fork bombs) are blocked on remote hosts just like locally.
 
 ### Git
 
@@ -459,7 +557,7 @@ Scaffold a new project from a template. Safe — cannot write outside workspace 
 ```
 terminal-guardian-mcp/
 ├── src/
-│   ├── index.ts              # MCP server entrypoint & tool routing (21 tools)
+│   ├── index.ts              # MCP server entrypoint & tool routing (24 tools)
 │   ├── types/index.ts        # Shared TypeScript types
 │   ├── config/loader.ts      # Config file loading with deep merge
 │   ├── security/
@@ -480,11 +578,17 @@ terminal-guardian-mcp/
 │   ├── git/
 │   │   ├── manager.ts        # Git operations via child_process
 │   │   └── commitGenerator.ts # AI commit message generation (Anthropic API)
+│   ├── ssh/
+│   │   ├── manager.ts        # SSH connection pool + profile management
+│   │   └── executor.ts       # Remote command execution with risk analysis
 │   ├── workspace/
 │   │   └── templates.ts      # Project scaffolding — 8 templates
+│   ├── transport/
+│   │   ├── wsServer.ts       # WebSocket HTTP server + auth + multi-client
+│   │   └── dashboard.ts      # Live web dashboard (dark theme, auto-refresh)
 │   └── logging/
 │       └── logger.ts         # Pino-based structured logging
-├── tests/                    # Vitest unit tests (136 tests)
+├── tests/                    # Vitest unit tests (170 tests)
 ├── .github/workflows/        # CI/CD pipeline (Node 18/20/22)
 ├── Dockerfile                # Multi-stage build, non-root user
 ├── docker-compose.yml
@@ -543,6 +647,38 @@ terminal-guardian-mcp/
     "logOutputs": false,
     "logSecurityEvents": true,
     "prettyPrint": false
+  },
+  "ssh": {
+    "enabled": false,
+    "timeout": 30000,
+    "keepaliveInterval": 10000,
+    "maxConnections": 5,
+    "profiles": {}
+  }
+}
+```
+
+### SSH Profiles
+
+To use SSH tools, add profiles to `ssh.profiles` and set `ssh.enabled: true`:
+
+```json
+{
+  "ssh": {
+    "enabled": true,
+    "profiles": {
+      "prod": {
+        "host": "prod.example.com",
+        "port": 22,
+        "username": "deploy",
+        "privateKeyPath": "~/.ssh/id_rsa"
+      },
+      "staging": {
+        "host": "staging.example.com",
+        "username": "ubuntu",
+        "privateKeyPath": "~/.ssh/staging_key"
+      }
+    }
   }
 }
 ```
@@ -563,6 +699,8 @@ terminal-guardian-mcp/
 | `docker.allowContainerRestart` | `false` | Allow restarting containers |
 | `git.allowPush` | `false` | Allow `git push` via run_command |
 | `logging.logOutputs` | `false` | Log stdout/stderr (may contain secrets!) |
+| `ssh.enabled` | `false` | Enable SSH tool integration |
+| `ssh.maxConnections` | `5` | Max pooled SSH connections |
 
 ---
 
@@ -601,6 +739,7 @@ Terminal Guardian operates on a **deny-by-default** model with explicit allowlis
 - `get_env` — secrets masked before they leave the module
 - `dns_lookup` — read-only DNS query
 - `ping` to public hosts
+- `ssh_list_profiles`, `ssh_test` — read-only, no command execution
 
 ### Threat model
 - **AI hallucination safety** — blocks commands an AI might suggest incorrectly
@@ -611,6 +750,7 @@ Terminal Guardian operates on a **deny-by-default** model with explicit allowlis
 - **SSRF protection** — private network ranges blocked in all network tools
 - **Data exfiltration** — output size limits, no secret logging by default
 - **Workspace isolation** — templates and filesystem tools cannot escape workspace root
+- **Remote command safety** — same risk engine on SSH as locally, BLOCKED means BLOCKED everywhere
 
 ---
 
@@ -766,6 +906,31 @@ Claude: [calls docker_exec {"container": "api", "command": ["node", "--version"]
         "v20.11.0"
 ```
 
+**SSH — remote server management:**
+```
+User: Check nginx status on prod
+Claude: [calls ssh_test {"profile": "prod"}]
+        "Connected to prod.example.com (42ms latency)."
+
+Claude: [calls ssh_exec {"profile": "prod", "command": "systemctl status nginx"}]
+        "● nginx.service — active (running) since..."
+
+User: Restart it
+Claude: [calls ssh_exec {"profile": "prod", "command": "systemctl restart nginx", "confirmed": true}]
+        "Done — nginx restarted. Exit code 0."
+```
+
+**WebSocket mode — remote access:**
+```bash
+# On your dev server
+terminal-guardian-mcp --transport ws --port 3000 --token mytoken
+
+# Dashboard: http://your-server:3000
+# Claude Desktop connects via ws://your-server:3000
+
+# Multiple Claude sessions can connect simultaneously — each gets isolated MCP instance
+```
+
 ---
 
 ## Roadmap
@@ -785,10 +950,10 @@ Claude: [calls docker_exec {"container": "api", "command": ["node", "--version"]
 - [x] **v1.3** — AI-powered commit message generation (`git_suggest_commit`)
 - [x] **v1.3** — Workspace templates — 8 project starters (`list_templates`, `apply_template`)
 - [x] **v1.4** — WebSocket transport (alongside stdio) with auth, dashboard, multi-client
+- [x] **v1.5** — Remote SSH execution with key-based auth, connection pool, risk analysis
 
 ### Planned
 
-- [ ] **v1.5** — Remote SSH execution with key-based auth
 - [ ] **v2.0** — Full gVisor/nsjail sandbox integration
 - [ ] **v2.0** — Per-session permission scoping
 - [ ] **v2.0** — Audit log export (JSON/CSV/SIEM formats)

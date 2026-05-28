@@ -185,6 +185,13 @@ export interface GuardianConfig {
     logSecurityEvents: boolean;
     prettyPrint: boolean;
   };
+  ssh: {
+    enabled: boolean;
+    timeout: number;
+    keepaliveInterval: number;
+    maxConnections: number;
+    profiles: Record<string, SshProfile>;
+  };
 }
 
 export interface ToolResponse<T = unknown> {
@@ -192,4 +199,40 @@ export interface ToolResponse<T = unknown> {
   data?: T | undefined;
   error?: string | undefined;
   metadata?: Record<string, unknown> | undefined;
+}
+
+// ── SSH ──────────────────────────────────────────────────────
+
+export interface SshProfile {
+  host: string;
+  port?: number | undefined;
+  username: string;
+  privateKeyPath?: string | undefined;
+  password?: string | undefined;
+  passphrase?: string | undefined;
+  fingerprint?: string | undefined;
+}
+
+export interface SshCommandResult {
+  profile: string;
+  host: string;
+  command: string;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  duration: number;
+  timedOut: boolean;
+  timestamp: string;
+  riskAssessment: import('./index.js').RiskAssessment;
+}
+
+export interface SshTestResult {
+  profile: string;
+  host: string;
+  port: number;
+  username: string;
+  connected: boolean;
+  latencyMs?: number | undefined;
+  serverVersion?: string | undefined;
+  error?: string | undefined;
 }
